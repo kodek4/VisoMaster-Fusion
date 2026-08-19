@@ -342,6 +342,10 @@ class PipelineProcessor:
                 .float()
                 .to(self.worker.models_processor.device)
             )
+            identity_injection = float(
+                parameters.get("AlphaFaceIdentityInjectionDecimalSlider", 1.0)
+            )
+            latent.mul_(max(0.0, min(identity_injection, 1.5)))
             if not (
                 alphaface_profile.fast_runtime
                 and not parameters.get("FaceLikenessEnableToggle", False)

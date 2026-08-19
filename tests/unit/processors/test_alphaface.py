@@ -379,3 +379,41 @@ def test_alphaface_exact_profile_skips_unused_target_latent() -> None:
 
     assert selected is faces[2]
     assert torch.is_tensor(latent)
+
+
+def test_alphaface_identity_injection_scales_source_code() -> None:
+    source = np.ones(512, dtype=np.float32)
+    target = np.full(512, 2.0, dtype=np.float32)
+
+    class Functions:
+        @staticmethod
+        def calc_swapper_latent_alphaface(embedding: np.ndarray) -> np.ndarray:
+            if embedding is target:
+                raise AssertionError("identity injection does not need target identity")
+            return np.ones((1, 512), dtype=np.float32)
+
+    worker = SimpleNamespace(
+        function_worker=Functions(),
+        models_processor=SimpleNamespace(device=torch.device("cpu")),
+    )
+    pipeline = PipelineProcessor(worker)
+    faces = tuple(torch.zeros((3, size, size)) for size in (512, 384, 256, 128))
+
+    _selected, _dfm, _dim, latent = (
+        pipeline.get_affined_face_dim_and_swapping_latents(
+            faces,
+            "AlphaFace",
+            None,
+            source,
+            target,
+            {
+                "FaceLikenessEnableToggle": False,
+                "AlphaFacePerformanceProfileSelection": "Exact",
+                "AlphaFaceIdentityInjectionDecimalSlider": 1.25,
+            },
+            False,
+            None,
+        )
+    )
+
+    torch.testing.assert_close(latent, torch.full((1, 512), 1.25))
