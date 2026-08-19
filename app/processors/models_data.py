@@ -305,8 +305,8 @@ models_list = [
     {
         "model_name": "AlphaFace",
         "local_path": f"{models_dir}/alphaface/alphaface_swapper.onnx",
-        "hash": "32890d53c61e90802c85389dd0858632d927258f62bb589bacdc38904a64494f",
-        "url": "https://github.com/kodek4/VisoMaster-Fusion/releases/download/alphaface-model-v1/alphaface_swapper.onnx",
+        "hash": "bab57e96b1d12602415661d28887e20f5637003300e8bc303cf054827afa442b",
+        "url": "https://github.com/kodek4/VisoMaster-Fusion/releases/download/alphaface-model-v1/alphaface_swapper_optimized.onnx",
         "optional": True,
     },
     {

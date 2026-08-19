@@ -8,6 +8,7 @@ import numpy as np
 import torch
 
 from app.processors.face_swappers import FaceSwappers
+from app.processors.alphaface.model import IdentityFeedingBlock
 from app.processors.models_data import (
     arcface_mapping_model_dict,
     fp16_safe_models_list,
@@ -22,7 +23,9 @@ def test_alphaface_is_optional_and_uses_shared_arcface() -> None:
     model = next(item for item in models_list if item["model_name"] == "AlphaFace")
 
     assert model["optional"] is True
-    assert model["url"].endswith("/alphaface-model-v1/alphaface_swapper.onnx")
+    assert model["url"].endswith(
+        "/alphaface-model-v1/alphaface_swapper_optimized.onnx"
+    )
     assert arcface_mapping_model_dict["AlphaFace"] == "Inswapper128ArcFace"
     assert "AlphaFace" not in fp16_safe_models_list
 
@@ -38,6 +41,45 @@ def test_alphaface_projection_is_matrix_multiply_then_l2_normalize() -> None:
     expected = embedding.reshape(1, -1) / np.linalg.norm(embedding)
     np.testing.assert_allclose(latent, expected, rtol=1e-6, atol=1e-7)
     np.testing.assert_allclose(np.linalg.norm(latent), 1.0, atol=1e-6)
+
+
+def test_alphaface_identity_block_matches_official_singleton_adain() -> None:
+    torch.manual_seed(7)
+    block = IdentityFeedingBlock(output_dim=8, identity_dim=4)
+    identity = torch.randn((1, 4))
+    target = torch.randn((1, 4, 8, 8))
+
+    projected = block.fc(identity).unsqueeze(2).unsqueeze(3)
+    first, second = projected.chunk(2, dim=1)
+
+    def official_adain(x: torch.Tensor) -> torch.Tensor:
+        x_mean = torch.sum(x, (2, 3)) / (x.shape[2] * x.shape[3])
+        centered = (x.permute(2, 3, 0, 1) - x_mean).permute(2, 3, 0, 1)
+        x_std = torch.sqrt(
+            (torch.sum(centered**2, (2, 3)) + 2.3e-8)
+            / (x.shape[2] * x.shape[3])
+        )
+        target_mean = torch.sum(target, (2, 3)) / (
+            target.shape[2] * target.shape[3]
+        )
+        target_centered = (
+            target.permute(2, 3, 0, 1) - target_mean
+        ).permute(2, 3, 0, 1)
+        target_std = torch.sqrt(
+            (torch.sum(target_centered**2, (2, 3)) + 2.3e-8)
+            / (target.shape[2] * target.shape[3])
+        )
+        normalized = (x.permute(2, 3, 0, 1) - x_mean) / x_std
+        return (target_std * normalized + target_mean).permute(2, 3, 0, 1)
+
+    expected = (
+        (first + official_adain(first)) / 2.0,
+        (second + official_adain(second)) / 2.0,
+    )
+    actual = block(identity, target)
+
+    torch.testing.assert_close(actual[0], expected[0], rtol=0, atol=0)
+    torch.testing.assert_close(actual[1], expected[1], rtol=0, atol=0)
 
 
 def test_alphaface_selects_256px_face_and_projected_latent() -> None:

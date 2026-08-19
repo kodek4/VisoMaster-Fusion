@@ -12,38 +12,27 @@ from torch import nn
 from torch.nn import functional as F
 
 
-class AdaptiveInstanceNormalization(nn.Module):
-    @staticmethod
-    def _mean(x: torch.Tensor) -> torch.Tensor:
-        return torch.sum(x, (2, 3)) / (x.shape[2] * x.shape[3])
-
-    @classmethod
-    def _std(cls, x: torch.Tensor) -> torch.Tensor:
-        centered = (x.permute(2, 3, 0, 1) - cls._mean(x)).permute(2, 3, 0, 1)
-        variance = (torch.sum(centered**2, (2, 3)) + 2.3e-8) / (x.shape[2] * x.shape[3])
-        return torch.sqrt(variance)
-
-    def forward(self, x: torch.Tensor, style: torch.Tensor) -> torch.Tensor:
-        normalized = (x.permute(2, 3, 0, 1) - self._mean(x)) / self._std(x)
-        return (self._std(style) * normalized + self._mean(style)).permute(2, 3, 0, 1)
-
-
 class IdentityFeedingBlock(nn.Module):
     def __init__(self, output_dim: int, identity_dim: int = 512) -> None:
         super().__init__()
         self.output_dim = output_dim
         self.fc = nn.Linear(identity_dim, output_dim)
-        self.AdaIN = AdaptiveInstanceNormalization()
 
     def forward(
         self, identity: torch.Tensor, target: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor]:
         projected = self.fc(identity).unsqueeze(2).unsqueeze(3)
+        # The projected identity is spatially 1x1, so its centered value is
+        # exactly zero. The official AdaIN expression therefore reduces to the
+        # target channel mean without changing the model's result.
+        target_mean = torch.sum(target, (2, 3), keepdim=True) / (
+            target.shape[2] * target.shape[3]
+        )
         midpoint = int(self.output_dim / 2)
         first = projected[:, 0:midpoint, :, :]
         second = projected[:, midpoint : self.output_dim, :, :]
-        first = (first + self.AdaIN(first, target)) / 2.0
-        second = (second + self.AdaIN(second, target)) / 2.0
+        first = (first + target_mean) / 2.0
+        second = (second + target_mean) / 2.0
         return first, second
 
 
