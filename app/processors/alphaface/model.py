@@ -37,9 +37,16 @@ class IdentityFeedingBlock(nn.Module):
 
 
 class OperationUnit(nn.Module):
-    def __init__(self, channels: int, identity_output_dim: int, activate: bool) -> None:
+    def __init__(
+        self,
+        channels: int,
+        identity_output_dim: int,
+        activate: bool,
+        fused_instance_norm: bool = False,
+    ) -> None:
         super().__init__()
         self.activate = activate
+        self.fused_instance_norm = fused_instance_norm
         self.Conv1 = nn.Conv2d(channels, channels, kernel_size=3, padding=0)
         self.activation = nn.ReLU()
         self.IFF = IdentityFeedingBlock(identity_output_dim)
@@ -48,25 +55,33 @@ class OperationUnit(nn.Module):
         scale, bias = self.IFF(identity, features)
         output = F.pad(features, (1, 1, 1, 1), mode="reflect")
         output = self.Conv1(output)
-        output = output - torch.mean(output, dim=(2, 3), keepdim=True)
-        variance = torch.mean(torch.mul(output, output), (2, 3), keepdim=True)
-        inverse_std = torch.div(1.0, torch.sqrt(torch.add(variance, 1.0e-8)))
-        output = torch.add(torch.mul(scale, torch.mul(output, inverse_std)), bias)
+        if self.fused_instance_norm:
+            output = F.instance_norm(output, eps=1.0e-8)
+        else:
+            output = output - torch.mean(output, dim=(2, 3), keepdim=True)
+            variance = torch.mean(torch.mul(output, output), (2, 3), keepdim=True)
+            inverse_std = torch.div(1.0, torch.sqrt(torch.add(variance, 1.0e-8)))
+            output = torch.mul(output, inverse_std)
+        output = torch.add(torch.mul(scale, output), bias)
         return self.activation(output) if self.activate else output
 
 
 class CrossAdaptiveIdentityInjectionBlock(nn.Module):
-    def __init__(self) -> None:
+    def __init__(self, fused_instance_norm: bool = False) -> None:
         super().__init__()
-        self.OP1 = OperationUnit(1024, 2048, activate=True)
-        self.OP2 = OperationUnit(1024, 2048, activate=False)
+        self.OP1 = OperationUnit(
+            1024, 2048, activate=True, fused_instance_norm=fused_instance_norm
+        )
+        self.OP2 = OperationUnit(
+            1024, 2048, activate=False, fused_instance_norm=fused_instance_norm
+        )
 
     def forward(self, features: torch.Tensor, identity: torch.Tensor) -> torch.Tensor:
         return features + self.OP2(self.OP1(features, identity), identity)
 
 
 class Encoder(nn.Module):
-    def __init__(self) -> None:
+    def __init__(self, fused_instance_norm: bool = False) -> None:
         super().__init__()
         channels = [3, 128, 256, 512, 1024]
         kernels = [7, 3, 3, 3]
@@ -89,7 +104,9 @@ class Encoder(nn.Module):
         )
         self.fusion_module = nn.ModuleDict(
             {
-                f"fusion_layer_{index}": CrossAdaptiveIdentityInjectionBlock()
+                f"fusion_layer_{index}": CrossAdaptiveIdentityInjectionBlock(
+                    fused_instance_norm=fused_instance_norm
+                )
                 for index in range(6)
             }
         )
@@ -134,10 +151,10 @@ class Decoder(nn.Module):
 class AlphaFaceSwapper(nn.Module):
     """The released 256px AlphaFace swapper without training dependencies."""
 
-    def __init__(self) -> None:
+    def __init__(self, fused_instance_norm: bool = False) -> None:
         super().__init__()
         # Attribute names match the official checkpoint exactly.
-        self.E = Encoder()
+        self.E = Encoder(fused_instance_norm=fused_instance_norm)
         self.G = Decoder()
 
     def forward(

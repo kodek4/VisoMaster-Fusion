@@ -24,6 +24,9 @@ if str(PROJECT_ROOT) not in sys.path:
 from app.processors.alphaface import AlphaFaceSwapper  # noqa: E402
 
 DEFAULT_OUTPUT = PROJECT_ROOT / "model_assets" / "alphaface" / "alphaface_swapper.onnx"
+FUSED_OUTPUT = (
+    PROJECT_ROOT / "model_assets" / "alphaface" / "alphaface_swapper_fused_norm.onnx"
+)
 
 
 def _sha256(path: Path) -> str:
@@ -44,8 +47,12 @@ def _checkpoint_state(checkpoint_path: Path) -> dict[str, torch.Tensor]:
     return state
 
 
-def export(checkpoint_path: Path, output_path: Path) -> None:
-    model = AlphaFaceSwapper().eval()
+def export(
+    checkpoint_path: Path,
+    output_path: Path,
+    fused_instance_norm: bool = False,
+) -> None:
+    model = AlphaFaceSwapper(fused_instance_norm=fused_instance_norm).eval()
     model.load_state_dict(_checkpoint_state(checkpoint_path), strict=True)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -78,9 +85,15 @@ def export(checkpoint_path: Path, output_path: Path) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("checkpoint", type=Path, help="Official alphaface_demo.pt")
-    parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
+    parser.add_argument("--output", type=Path)
+    parser.add_argument("--fused-instance-norm", action="store_true")
     args = parser.parse_args()
-    export(args.checkpoint.resolve(), args.output.resolve())
+    output = args.output or (FUSED_OUTPUT if args.fused_instance_norm else DEFAULT_OUTPUT)
+    export(
+        args.checkpoint.resolve(),
+        output.resolve(),
+        fused_instance_norm=args.fused_instance_norm,
+    )
 
 
 if __name__ == "__main__":

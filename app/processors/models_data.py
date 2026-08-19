@@ -24,7 +24,18 @@ assets_repo = "https://github.com/visomaster/visomaster-assets/releases/download
 ALPHAFACE_SIMPLIFIED_GRAPH = (
     os.environ.get("VISOMASTER_ALPHAFACE_SIMPLIFIED_GRAPH", "0") == "1"
 )
-if ALPHAFACE_SIMPLIFIED_GRAPH:
+ALPHAFACE_FUSED_NORM = (
+    os.environ.get("VISOMASTER_ALPHAFACE_FUSED_NORM", "0") == "1"
+)
+ALPHAFACE_TRT_FP16 = ALPHAFACE_FUSED_NORM and (
+    os.environ.get("VISOMASTER_ALPHAFACE_TRT_FP16", "0") == "1"
+)
+if ALPHAFACE_FUSED_NORM:
+    _alphaface_filename = "alphaface_swapper_fused_norm.onnx"
+    _alphaface_hash = (
+        "5514d967ab6cc27e1b0edc092e05ee97d235adccb4da68574a9b1a1e221a4c6a"
+    )
+elif ALPHAFACE_SIMPLIFIED_GRAPH:
     _alphaface_filename = "alphaface_swapper_optimized.onnx"
     _alphaface_hash = (
         "bab57e96b1d12602415661d28887e20f5637003300e8bc303cf054827afa442b"
@@ -300,6 +311,8 @@ fp16_safe_models_list = [
     "GhostFacev2",
     "GhostFacev3",
 ]
+if ALPHAFACE_TRT_FP16:
+    fp16_safe_models_list.append("AlphaFace")
 
 # Models whose ONNX graph must be shape-inferred (with a static batch=1) before
 # the TensorRT EP can build an engine. The PerformRecast warping module contains

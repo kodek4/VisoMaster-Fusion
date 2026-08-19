@@ -386,8 +386,14 @@ class ModelsProcessor(QtCore.QObject):
             cache_dir = "tensorrt-engines"
             base_onnx_name = os.path.splitext(os.path.basename(onnx_path))[0]
 
-            # Support both UI model names (explicit prefix) and base ONNX file names (legacy prefix)
-            possible_prefixes = list(dict.fromkeys([model_name, base_onnx_name]))
+            # AlphaFace experiment variants need separate caches. Other models
+            # keep their established UI-name prefix for compatibility.
+            explicit_prefix = (
+                base_onnx_name if model_name == "AlphaFace" else model_name
+            )
+            possible_prefixes = list(
+                dict.fromkeys([explicit_prefix, base_onnx_name])
+            )
 
             for prefix in possible_prefixes:
                 ctx_file_name = f"{prefix}_ctx.onnx"
@@ -580,7 +586,11 @@ class ModelsProcessor(QtCore.QObject):
                 model_trt_options.pop("trt_engine_cache_prefix", None)
             else:
                 # For EXPLICIT caches or brand new builds (None), strictly set custom prefix
-                model_trt_options["trt_engine_cache_prefix"] = model_name
+                model_trt_options["trt_engine_cache_prefix"] = (
+                    os.path.splitext(os.path.basename(onnx_path))[0]
+                    if model_name == "AlphaFace"
+                    else model_name
+                )
 
             # Check if the model is explicitly marked as safe for FP16 in models_data.py
             if model_name in fp16_safe_models_list:

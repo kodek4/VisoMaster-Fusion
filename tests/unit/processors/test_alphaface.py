@@ -8,10 +8,12 @@ import numpy as np
 import torch
 from torchvision.transforms import v2
 
-from app.processors.alphaface.model import IdentityFeedingBlock
+from app.processors.alphaface.model import IdentityFeedingBlock, OperationUnit
 from app.processors.face_swappers import FaceSwappers
 from app.processors.models_data import (
     ALPHAFACE_SIMPLIFIED_GRAPH,
+    ALPHAFACE_FUSED_NORM,
+    ALPHAFACE_TRT_FP16,
     arcface_mapping_model_dict,
     fp16_safe_models_list,
     models_list,
@@ -26,14 +28,15 @@ def test_alphaface_is_optional_and_uses_shared_arcface() -> None:
     model = next(item for item in models_list if item["model_name"] == "AlphaFace")
 
     assert model["optional"] is True
-    filename = (
-        "alphaface_swapper_optimized.onnx"
-        if ALPHAFACE_SIMPLIFIED_GRAPH
-        else "alphaface_swapper.onnx"
-    )
+    if ALPHAFACE_FUSED_NORM:
+        filename = "alphaface_swapper_fused_norm.onnx"
+    elif ALPHAFACE_SIMPLIFIED_GRAPH:
+        filename = "alphaface_swapper_optimized.onnx"
+    else:
+        filename = "alphaface_swapper.onnx"
     assert model["url"].endswith(f"/alphaface-model-v1/{filename}")
     assert arcface_mapping_model_dict["AlphaFace"] == "Inswapper128ArcFace"
-    assert "AlphaFace" not in fp16_safe_models_list
+    assert ("AlphaFace" in fp16_safe_models_list) is ALPHAFACE_TRT_FP16
 
 
 def test_alphaface_projection_is_matrix_multiply_then_l2_normalize() -> None:
@@ -86,6 +89,20 @@ def test_alphaface_identity_block_matches_official_singleton_adain() -> None:
 
     torch.testing.assert_close(actual[0], expected[0], rtol=0, atol=0)
     torch.testing.assert_close(actual[1], expected[1], rtol=0, atol=0)
+
+
+def test_alphaface_fused_instance_norm_stays_close_to_manual_path() -> None:
+    torch.manual_seed(11)
+    manual = OperationUnit(4, 8, activate=False)
+    fused = OperationUnit(4, 8, activate=False, fused_instance_norm=True)
+    fused.load_state_dict(manual.state_dict(), strict=True)
+    features = torch.randn((1, 4, 16, 16))
+    identity = torch.randn((1, 512))
+
+    manual_output = manual(features, identity)
+    fused_output = fused(features, identity)
+
+    torch.testing.assert_close(fused_output, manual_output, rtol=2e-5, atol=2e-5)
 
 
 def test_alphaface_selects_256px_face_and_projected_latent() -> None:
