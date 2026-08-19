@@ -1,5 +1,4 @@
 import math
-import os
 import re
 from math import ceil
 from collections import OrderedDict, deque
@@ -16,14 +15,7 @@ import kornia.geometry.transform as kgm
 
 from app.processors.utils import faceutil
 from app.processors.utils import platform_support
-
-
-ALPHAFACE_FAST_RUNTIME = (
-    os.environ.get("VISOMASTER_ALPHAFACE_FAST_RUNTIME", "0") == "1"
-)
-ALPHAFACE_LEAN_CROPS = (
-    os.environ.get("VISOMASTER_ALPHAFACE_LEAN_CROPS", "0") == "1"
-)
+from app.processors.alphaface.profiles import get_alphaface_profile
 
 if TYPE_CHECKING:
     # Forward reference to the main FrameWorker orchestrator
@@ -333,6 +325,9 @@ class PipelineProcessor:
 
         # --- AlphaFace Logic ---
         elif swapper_model == "AlphaFace":
+            alphaface_profile = get_alphaface_profile(
+                parameters.get("AlphaFacePerformanceProfileSelection")
+            )
             source_latent = self.worker.function_worker.calc_swapper_latent_alphaface(
                 s_e
             )
@@ -345,7 +340,7 @@ class PipelineProcessor:
                 .to(self.worker.models_processor.device)
             )
             if not (
-                ALPHAFACE_FAST_RUNTIME
+                alphaface_profile.fast_runtime
                 and not parameters.get("FaceLikenessEnableToggle", False)
             ):
                 target_latent = (
@@ -844,13 +839,16 @@ class PipelineProcessor:
 
         # --- AlphaFace Path ---
         elif swapper_model == "AlphaFace":
+            alphaface_profile = get_alphaface_profile(
+                parameters.get("AlphaFacePerformanceProfileSelection")
+            )
             for k in range(itex):
                 prev_face = input_face_affined
                 input_face_disc = (
                     input_face_affined.permute(2, 0, 1).unsqueeze(0).contiguous()
                 )
                 allocate_output = (
-                    torch.empty if ALPHAFACE_FAST_RUNTIME else torch.zeros
+                    torch.empty if alphaface_profile.fast_runtime else torch.zeros
                 )
                 swapper_output = allocate_output(
                     (1, 3, 256, 256),
@@ -859,10 +857,13 @@ class PipelineProcessor:
                 )
 
                 self.worker.function_worker.run_swapper_alphaface(
-                    input_face_disc, latent, swapper_output
+                    input_face_disc,
+                    latent,
+                    swapper_output,
+                    alphaface_profile.model_name,
                 )
                 if (
-                    not ALPHAFACE_FAST_RUNTIME
+                    not alphaface_profile.fast_runtime
                     and self.worker.models_processor.device_type == "cuda"
                 ):
                     platform_support.blocking_stream_sync()
@@ -1646,6 +1647,9 @@ class PipelineProcessor:
         parameters = parameters if parameters is not None else {}
         control = control if control is not None else {}
         swapper_model = parameters["SwapModelSelection"]
+        alphaface_profile = get_alphaface_profile(
+            parameters.get("AlphaFacePerformanceProfileSelection")
+        )
         itex = 1  # FW-BUG-10: default before any branching to prevent NameError
 
         # OPTIMIZED: Lightweight functional resize wrapper to prevent VRAM fragmentation
@@ -1687,7 +1691,7 @@ class PipelineProcessor:
             else "bilinear"
         )
         use_alphaface_lean_crops = (
-            swapper_model == "AlphaFace" and ALPHAFACE_LEAN_CROPS
+            swapper_model == "AlphaFace" and alphaface_profile.lean_crops
         )
         original_face_512, original_face_384, original_face_256, original_face_128 = (
             self.worker.get_transformed_and_scaled_faces(
@@ -1806,7 +1810,8 @@ class PipelineProcessor:
                 output_size = int(128 * dim)
                 allocate_output = (
                     torch.empty
-                    if swapper_model == "AlphaFace" and ALPHAFACE_FAST_RUNTIME
+                    if swapper_model == "AlphaFace"
+                    and alphaface_profile.fast_runtime
                     else torch.zeros
                 )
                 output = allocate_output(

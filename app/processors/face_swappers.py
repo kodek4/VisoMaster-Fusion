@@ -5,6 +5,7 @@ from skimage import transform as trans
 from torchvision.transforms import v2
 from app.processors.utils import faceutil
 from app.processors.models_data import models_dir
+from app.processors.alphaface.profiles import ALPHAFACE_MODEL_NAMES
 import numpy as np
 from numpy.linalg import norm as l2norm
 from typing import TYPE_CHECKING
@@ -43,7 +44,7 @@ class FaceSwappers:
         )
         self.swapper_models = [
             "Inswapper128",
-            "AlphaFace",
+            *ALPHAFACE_MODEL_NAMES,
             "InStyleSwapper256 Version A",
             "InStyleSwapper256 Version B",
             "InStyleSwapper256 Version C",
@@ -502,9 +503,12 @@ class FaceSwappers:
 
     @torch.no_grad()
     def run_swapper_alphaface(
-        self, image: torch.Tensor, embedding: torch.Tensor, output: torch.Tensor
+        self,
+        image: torch.Tensor,
+        embedding: torch.Tensor,
+        output: torch.Tensor,
+        model_name: str,
     ) -> None:
-        model_name = "AlphaFace"
         model = self._load_swapper_model(model_name)
         if not model:
             output.zero_()

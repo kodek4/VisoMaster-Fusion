@@ -11,32 +11,49 @@ from torchvision.transforms import v2
 from app.processors.alphaface.model import IdentityFeedingBlock, OperationUnit
 from app.processors.face_swappers import FaceSwappers
 from app.processors.models_data import (
-    ALPHAFACE_SIMPLIFIED_GRAPH,
-    ALPHAFACE_FUSED_NORM,
-    ALPHAFACE_TRT_FP16,
     arcface_mapping_model_dict,
     fp16_safe_models_list,
     models_list,
 )
+from app.processors.alphaface.profiles import (
+    ALPHAFACE_DEFAULT_PROFILE,
+    ALPHAFACE_FP16_MODEL_NAME,
+    ALPHAFACE_PROFILE_OPTIONS,
+    get_alphaface_profile,
+)
 from app.processors.utils import faceutil, platform_support
-from app.processors.workers import frame_worker_pipeline
 from app.processors.workers.frame_worker import FrameWorker
 from app.processors.workers.frame_worker_pipeline import PipelineProcessor
 
 
 def test_alphaface_is_optional_and_uses_shared_arcface() -> None:
-    model = next(item for item in models_list if item["model_name"] == "AlphaFace")
+    expected_files = {
+        "AlphaFace": "alphaface_swapper.onnx",
+        "AlphaFace Exact": "alphaface_swapper_optimized.onnx",
+        "AlphaFace Fused": "alphaface_swapper_fused_norm.onnx",
+        ALPHAFACE_FP16_MODEL_NAME: "alphaface_swapper_fused_norm.onnx",
+    }
+    alphaface_models = {
+        item["model_name"]: item
+        for item in models_list
+        if item["model_name"] in expected_files
+    }
 
-    assert model["optional"] is True
-    if ALPHAFACE_FUSED_NORM:
-        filename = "alphaface_swapper_fused_norm.onnx"
-    elif ALPHAFACE_SIMPLIFIED_GRAPH:
-        filename = "alphaface_swapper_optimized.onnx"
-    else:
-        filename = "alphaface_swapper.onnx"
-    assert model["url"].endswith(f"/alphaface-model-v1/{filename}")
+    assert alphaface_models.keys() == expected_files.keys()
+    for model_name, filename in expected_files.items():
+        model = alphaface_models[model_name]
+        assert model["optional"] is True
+        assert model["url"].endswith(f"/alphaface-model-v1/{filename}")
     assert arcface_mapping_model_dict["AlphaFace"] == "Inswapper128ArcFace"
-    assert ("AlphaFace" in fp16_safe_models_list) is ALPHAFACE_TRT_FP16
+    assert ALPHAFACE_FP16_MODEL_NAME in fp16_safe_models_list
+    assert "AlphaFace Fused" not in fp16_safe_models_list
+
+
+def test_alphaface_profile_contract() -> None:
+    assert ALPHAFACE_PROFILE_OPTIONS[0] == ALPHAFACE_DEFAULT_PROFILE
+    assert get_alphaface_profile("Exact").fast_runtime is True
+    assert get_alphaface_profile("Exact").lean_crops is True
+    assert get_alphaface_profile("not-a-profile").model_name == "AlphaFace"
 
 
 def test_alphaface_projection_is_matrix_multiply_then_l2_normalize() -> None:
@@ -179,9 +196,10 @@ def test_alphaface_excludes_scale_popping_pitch_templates() -> None:
 def test_alphaface_inference_path_preserves_unit_range_contract() -> None:
     class Functions:
         @staticmethod
-        def run_swapper_alphaface(image, embedding, output) -> None:
+        def run_swapper_alphaface(image, embedding, output, model_name) -> None:
             assert image.shape == (1, 3, 256, 256)
             assert embedding.shape == (1, 512)
+            assert model_name == "AlphaFace"
             output.fill_(0.25)
 
     worker = SimpleNamespace(
@@ -213,7 +231,7 @@ def test_alphaface_inference_path_preserves_unit_range_contract() -> None:
 def test_alphaface_nonfinite_output_falls_back_to_aligned_crop() -> None:
     class Functions:
         @staticmethod
-        def run_swapper_alphaface(image, embedding, output) -> None:
+        def run_swapper_alphaface(image, embedding, output, model_name) -> None:
             output.fill_(float("nan"))
 
     worker = SimpleNamespace(
@@ -241,10 +259,13 @@ def test_alphaface_nonfinite_output_falls_back_to_aligned_crop() -> None:
     assert torch.allclose(swap, torch.full_like(swap, 127.5))
 
 
-def test_alphaface_fast_runtime_toggle_preserves_output(monkeypatch) -> None:
+def test_alphaface_exact_profile_preserves_runtime_output(monkeypatch) -> None:
+    model_names = []
+
     class Functions:
         @staticmethod
-        def run_swapper_alphaface(image, embedding, output) -> None:
+        def run_swapper_alphaface(image, embedding, output, model_name) -> None:
+            model_names.append(model_name)
             output.fill_(0.25)
 
     worker = SimpleNamespace(
@@ -264,8 +285,7 @@ def test_alphaface_fast_runtime_toggle_preserves_output(monkeypatch) -> None:
     monkeypatch.setattr(platform_support, "blocking_stream_sync", count_sync)
 
     results = []
-    for enabled in (False, True):
-        monkeypatch.setattr(frame_worker_pipeline, "ALPHAFACE_FAST_RUNTIME", enabled)
+    for profile_name in ("Baseline", "Exact"):
         swap, _ = pipeline.get_swapped_and_prev_face(
             output=torch.empty_like(face),
             input_face_affined=face,
@@ -275,15 +295,19 @@ def test_alphaface_fast_runtime_toggle_preserves_output(monkeypatch) -> None:
             dim=2,
             swapper_model="AlphaFace",
             dfm_model=None,
-            parameters={"PreSwapSharpnessDecimalSlider": 1.0},
+            parameters={
+                "PreSwapSharpnessDecimalSlider": 1.0,
+                "AlphaFacePerformanceProfileSelection": profile_name,
+            },
         )
         results.append(swap)
 
     assert sync_calls == 1
+    assert model_names == ["AlphaFace", "AlphaFace Exact"]
     torch.testing.assert_close(results[0], results[1], rtol=0, atol=0)
 
 
-def test_alphaface_fast_runtime_skips_unused_target_latent(monkeypatch) -> None:
+def test_alphaface_exact_profile_skips_unused_target_latent() -> None:
     source = np.ones(512, dtype=np.float32)
     target = np.full(512, 2.0, dtype=np.float32)
 
@@ -300,8 +324,6 @@ def test_alphaface_fast_runtime_skips_unused_target_latent(monkeypatch) -> None:
     )
     pipeline = PipelineProcessor(worker)
     faces = tuple(torch.zeros((3, size, size)) for size in (512, 384, 256, 128))
-    monkeypatch.setattr(frame_worker_pipeline, "ALPHAFACE_FAST_RUNTIME", True)
-
     selected, _dfm, _dim, latent = (
         pipeline.get_affined_face_dim_and_swapping_latents(
             faces,
@@ -309,7 +331,10 @@ def test_alphaface_fast_runtime_skips_unused_target_latent(monkeypatch) -> None:
             None,
             source,
             target,
-            {"FaceLikenessEnableToggle": False},
+            {
+                "FaceLikenessEnableToggle": False,
+                "AlphaFacePerformanceProfileSelection": "Exact",
+            },
             False,
             None,
         )

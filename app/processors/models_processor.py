@@ -57,6 +57,10 @@ from app.processors.models_data import (
     FFHQ_KPS,
     LANDMARKS_SUBSET_IDXS,
 )
+from app.processors.alphaface.profiles import (
+    ALPHAFACE_FP16_MODEL_NAME,
+    ALPHAFACE_MODEL_NAMES,
+)
 
 if TYPE_CHECKING:
     from app.ui.main_ui import MainWindow
@@ -371,6 +375,15 @@ class ModelsProcessor(QtCore.QObject):
             traceback.print_exc()
             return onnx_path
 
+    @staticmethod
+    def _get_trt_cache_prefix(model_name: str, onnx_path: str) -> str:
+        if model_name in ALPHAFACE_MODEL_NAMES:
+            base_name = os.path.splitext(os.path.basename(onnx_path))[0]
+            if model_name == ALPHAFACE_FP16_MODEL_NAME:
+                return f"{base_name}_fp16"
+            return base_name
+        return model_name
+
     def _check_tensorrt_cache_state(
         self, model_name: str, onnx_path: str
     ) -> str | None:
@@ -386,14 +399,12 @@ class ModelsProcessor(QtCore.QObject):
             cache_dir = "tensorrt-engines"
             base_onnx_name = os.path.splitext(os.path.basename(onnx_path))[0]
 
-            # AlphaFace experiment variants need separate caches. Other models
-            # keep their established UI-name prefix for compatibility.
-            explicit_prefix = (
-                base_onnx_name if model_name == "AlphaFace" else model_name
-            )
-            possible_prefixes = list(
-                dict.fromkeys([explicit_prefix, base_onnx_name])
-            )
+            explicit_prefix = self._get_trt_cache_prefix(model_name, onnx_path)
+            possible_prefixes = [explicit_prefix]
+            if model_name not in ALPHAFACE_MODEL_NAMES:
+                possible_prefixes = list(
+                    dict.fromkeys([explicit_prefix, base_onnx_name])
+                )
 
             for prefix in possible_prefixes:
                 ctx_file_name = f"{prefix}_ctx.onnx"
@@ -450,7 +461,8 @@ class ModelsProcessor(QtCore.QObject):
         possible_prefixes: list[str] = []
         if target_prefix:
             possible_prefixes.append(target_prefix)
-        possible_prefixes.append(base_onnx_name)
+        if not target_prefix or not target_prefix.startswith(f"{base_onnx_name}_"):
+            possible_prefixes.append(base_onnx_name)
         possible_prefixes = list(dict.fromkeys(possible_prefixes))
 
         engine_file_paths_to_check: list[str] = []
@@ -587,9 +599,7 @@ class ModelsProcessor(QtCore.QObject):
             else:
                 # For EXPLICIT caches or brand new builds (None), strictly set custom prefix
                 model_trt_options["trt_engine_cache_prefix"] = (
-                    os.path.splitext(os.path.basename(onnx_path))[0]
-                    if model_name == "AlphaFace"
-                    else model_name
+                    self._get_trt_cache_prefix(model_name, onnx_path)
                 )
 
             # Check if the model is explicitly marked as safe for FP16 in models_data.py

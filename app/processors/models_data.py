@@ -2,6 +2,8 @@ import os
 from pathlib import Path
 import numpy as np
 
+from app.processors.alphaface.profiles import ALPHAFACE_FP16_MODEL_NAME
+
 models_dir = Path(__file__).resolve().parent.parent.parent / "model_assets"
 # ensure ref-ldm paths exist
 refldm_ckpts_path = models_dir / "ref-ldm_embedding/ckpts"
@@ -18,33 +20,6 @@ for _subfolder in ("alphaface", "liveportrait_onnx", "performrecast_onnx"):
     os.makedirs(models_dir / _subfolder, exist_ok=True)
 
 assets_repo = "https://github.com/visomaster/visomaster-assets/releases/download"
-
-# Hidden A/B switch for the performance branch. Read once at startup so model
-# selection cannot change underneath an active ONNX Runtime session.
-ALPHAFACE_SIMPLIFIED_GRAPH = (
-    os.environ.get("VISOMASTER_ALPHAFACE_SIMPLIFIED_GRAPH", "0") == "1"
-)
-ALPHAFACE_FUSED_NORM = (
-    os.environ.get("VISOMASTER_ALPHAFACE_FUSED_NORM", "0") == "1"
-)
-ALPHAFACE_TRT_FP16 = ALPHAFACE_FUSED_NORM and (
-    os.environ.get("VISOMASTER_ALPHAFACE_TRT_FP16", "0") == "1"
-)
-if ALPHAFACE_FUSED_NORM:
-    _alphaface_filename = "alphaface_swapper_fused_norm.onnx"
-    _alphaface_hash = (
-        "5514d967ab6cc27e1b0edc092e05ee97d235adccb4da68574a9b1a1e221a4c6a"
-    )
-elif ALPHAFACE_SIMPLIFIED_GRAPH:
-    _alphaface_filename = "alphaface_swapper_optimized.onnx"
-    _alphaface_hash = (
-        "bab57e96b1d12602415661d28887e20f5637003300e8bc303cf054827afa442b"
-    )
-else:
-    _alphaface_filename = "alphaface_swapper.onnx"
-    _alphaface_hash = (
-        "32890d53c61e90802c85389dd0858632d927258f62bb589bacdc38904a64494f"
-    )
 
 ARCFACE_DST = np.array(
     [
@@ -311,8 +286,7 @@ fp16_safe_models_list = [
     "GhostFacev2",
     "GhostFacev3",
 ]
-if ALPHAFACE_TRT_FP16:
-    fp16_safe_models_list.append("AlphaFace")
+fp16_safe_models_list.append(ALPHAFACE_FP16_MODEL_NAME)
 
 # Models whose ONNX graph must be shape-inferred (with a static batch=1) before
 # the TensorRT EP can build an engine. The PerformRecast warping module contains
@@ -333,11 +307,41 @@ models_list = [
     },
     {
         "model_name": "AlphaFace",
-        "local_path": f"{models_dir}/alphaface/{_alphaface_filename}",
-        "hash": _alphaface_hash,
+        "local_path": f"{models_dir}/alphaface/alphaface_swapper.onnx",
+        "hash": "32890d53c61e90802c85389dd0858632d927258f62bb589bacdc38904a64494f",
         "url": (
             "https://github.com/kodek4/VisoMaster-Fusion/releases/download/"
-            f"alphaface-model-v1/{_alphaface_filename}"
+            "alphaface-model-v1/alphaface_swapper.onnx"
+        ),
+        "optional": True,
+    },
+    {
+        "model_name": "AlphaFace Exact",
+        "local_path": f"{models_dir}/alphaface/alphaface_swapper_optimized.onnx",
+        "hash": "bab57e96b1d12602415661d28887e20f5637003300e8bc303cf054827afa442b",
+        "url": (
+            "https://github.com/kodek4/VisoMaster-Fusion/releases/download/"
+            "alphaface-model-v1/alphaface_swapper_optimized.onnx"
+        ),
+        "optional": True,
+    },
+    {
+        "model_name": "AlphaFace Fused",
+        "local_path": f"{models_dir}/alphaface/alphaface_swapper_fused_norm.onnx",
+        "hash": "5514d967ab6cc27e1b0edc092e05ee97d235adccb4da68574a9b1a1e221a4c6a",
+        "url": (
+            "https://github.com/kodek4/VisoMaster-Fusion/releases/download/"
+            "alphaface-model-v1/alphaface_swapper_fused_norm.onnx"
+        ),
+        "optional": True,
+    },
+    {
+        "model_name": ALPHAFACE_FP16_MODEL_NAME,
+        "local_path": f"{models_dir}/alphaface/alphaface_swapper_fused_norm.onnx",
+        "hash": "5514d967ab6cc27e1b0edc092e05ee97d235adccb4da68574a9b1a1e221a4c6a",
+        "url": (
+            "https://github.com/kodek4/VisoMaster-Fusion/releases/download/"
+            "alphaface-model-v1/alphaface_swapper_fused_norm.onnx"
         ),
         "optional": True,
     },

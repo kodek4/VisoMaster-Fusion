@@ -320,9 +320,15 @@ class FunctionWorker:
         return self.face_swappers.calc_swapper_latent_alphaface(source_embedding)
 
     def run_swapper_alphaface(
-        self, image: torch.Tensor, embedding: torch.Tensor, output: torch.Tensor
+        self,
+        image: torch.Tensor,
+        embedding: torch.Tensor,
+        output: torch.Tensor,
+        model_name: str,
     ) -> None:
-        self.face_swappers.run_swapper_alphaface(image, embedding, output)
+        self.face_swappers.run_swapper_alphaface(
+            image, embedding, output, model_name
+        )
 
     def run_inswapper(
         self, image: np.ndarray, embedding: np.ndarray, output: Any
