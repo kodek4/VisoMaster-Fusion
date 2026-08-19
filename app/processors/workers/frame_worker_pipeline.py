@@ -832,17 +832,15 @@ class PipelineProcessor:
                 input_face_disc = (
                     input_face_affined.permute(2, 0, 1).unsqueeze(0).contiguous()
                 )
-                swapper_output = torch.zeros(
+                swapper_output = torch.empty(
                     (1, 3, 256, 256),
                     dtype=torch.float32,
                     device=self.worker.models_processor.device,
-                ).contiguous()
+                )
 
                 self.worker.function_worker.run_swapper_alphaface(
                     input_face_disc, latent, swapper_output
                 )
-                if self.worker.models_processor.device_type == "cuda":
-                    platform_support.blocking_stream_sync()
 
                 swapper_output = swapper_output.squeeze(0)
                 valid_output = torch.logical_and(
