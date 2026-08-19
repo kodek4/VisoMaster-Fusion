@@ -14,6 +14,13 @@ if _cfg_path.is_file():
             break
 
 for model_data in models_list:
+    if not model_data.get("url"):
+        if not Path(model_data["local_path"]).is_file():
+            print(
+                f"[INFO] Optional model '{model_data['model_name']}' is not installed; "
+                "skipping automatic download."
+            )
+        continue
     download_file(
         model_data["model_name"],
         model_data["local_path"],

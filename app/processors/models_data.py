@@ -14,7 +14,7 @@ os.makedirs(refldm_ckpts_path, exist_ok=True)
 # ONNX files. Creating them here makes the destinations exist regardless of how
 # the models arrive (download vs. copy-in). The downloader also makes parent
 # dirs on demand, so this is belt-and-suspenders.
-for _subfolder in ("liveportrait_onnx", "performrecast_onnx"):
+for _subfolder in ("alphaface", "liveportrait_onnx", "performrecast_onnx"):
     os.makedirs(models_dir / _subfolder, exist_ok=True)
 
 assets_repo = "https://github.com/visomaster/visomaster-assets/releases/download"
@@ -192,6 +192,7 @@ LANDMARKS_SUBSET_IDXS = [
 
 arcface_mapping_model_dict = {
     "Inswapper128": "Inswapper128ArcFace",
+    "AlphaFace": "Inswapper128ArcFace",
     "InStyleSwapper256 Version A": "Inswapper128ArcFace",
     "InStyleSwapper256 Version B": "Inswapper128ArcFace",
     "InStyleSwapper256 Version C": "Inswapper128ArcFace",
@@ -300,6 +301,13 @@ models_list = [
         "local_path": f"{models_dir}/inswapper_128.fp16.onnx",
         "hash": "6d51a9278a1f650cffefc18ba53f38bf2769bf4bbff89267822cf72945f8a38b",
         "url": f"{assets_repo}/v0.1.0/inswapper_128.fp16.onnx",
+    },
+    {
+        "model_name": "AlphaFace",
+        "local_path": f"{models_dir}/alphaface/alphaface_swapper.onnx",
+        "hash": "32890d53c61e90802c85389dd0858632d927258f62bb589bacdc38904a64494f",
+        "url": None,
+        "optional": True,
     },
     {
         "model_name": "InStyleSwapper256 Version A",

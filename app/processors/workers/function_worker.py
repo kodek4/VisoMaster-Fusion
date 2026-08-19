@@ -314,6 +314,16 @@ class FunctionWorker:
     def calc_inswapper_latent(self, source_embedding: np.ndarray) -> np.ndarray:
         return self.face_swappers.calc_inswapper_latent(source_embedding)
 
+    def calc_swapper_latent_alphaface(
+        self, source_embedding: np.ndarray
+    ) -> np.ndarray | None:
+        return self.face_swappers.calc_swapper_latent_alphaface(source_embedding)
+
+    def run_swapper_alphaface(
+        self, image: torch.Tensor, embedding: torch.Tensor, output: torch.Tensor
+    ) -> None:
+        self.face_swappers.run_swapper_alphaface(image, embedding, output)
+
     def run_inswapper(
         self, image: np.ndarray, embedding: np.ndarray, output: Any
     ) -> None:

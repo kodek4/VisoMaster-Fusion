@@ -205,6 +205,8 @@ def check_models_presence() -> tuple[bool, list[str]]:
     """Quickly check if any expected model files are missing (no hash check)."""
     missing: list[str] = []
     for model in models_list:
+        if model.get("optional"):
+            continue
         local_path = model.get("local_path")
         if not local_path:
             continue

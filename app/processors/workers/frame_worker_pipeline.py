@@ -322,6 +322,31 @@ class PipelineProcessor:
                     dim = 4
                     input_face_affined = original_face_512
 
+        # --- AlphaFace Logic ---
+        elif swapper_model == "AlphaFace":
+            source_latent = self.worker.function_worker.calc_swapper_latent_alphaface(
+                s_e
+            )
+            target_latent = self.worker.function_worker.calc_swapper_latent_alphaface(
+                t_e
+            )
+            if source_latent is None or target_latent is None:
+                return input_face_affined, dfm_model_instance, dim, latent
+
+            latent = (
+                torch.from_numpy(source_latent)
+                .float()
+                .to(self.worker.models_processor.device)
+            )
+            target_latent_tensor = (
+                torch.from_numpy(target_latent)
+                .float()
+                .to(self.worker.models_processor.device)
+            )
+            latent = self._apply_likeness(latent, target_latent_tensor, parameters)
+            dim = 2
+            input_face_affined = original_face_256
+
         # --- InStyleSwapper Logic ---
         elif swapper_model in (
             "InStyleSwapper256 Version A",
@@ -799,6 +824,47 @@ class PipelineProcessor:
 
                     input_face_affined = temp_output
                     output = torch.clamp(temp_output * 255.0, 0, 255)
+
+        # --- AlphaFace Path ---
+        elif swapper_model == "AlphaFace":
+            for k in range(itex):
+                prev_face = input_face_affined
+                input_face_disc = (
+                    input_face_affined.permute(2, 0, 1).unsqueeze(0).contiguous()
+                )
+                swapper_output = torch.zeros(
+                    (1, 3, 256, 256),
+                    dtype=torch.float32,
+                    device=self.worker.models_processor.device,
+                ).contiguous()
+
+                self.worker.function_worker.run_swapper_alphaface(
+                    input_face_disc, latent, swapper_output
+                )
+                if self.worker.models_processor.device_type == "cuda":
+                    platform_support.blocking_stream_sync()
+
+                swapper_output = swapper_output.squeeze(0)
+                valid_output = torch.logical_and(
+                    torch.isfinite(swapper_output).all(),
+                    swapper_output.abs().mean() >= 1e-4,
+                )
+                swapper_output = torch.where(
+                    valid_output,
+                    swapper_output,
+                    input_face_affined.permute(2, 0, 1),
+                )
+
+                if use_mode_2:
+                    if k == 0:
+                        first_pass_face = swapper_output.clone()
+                    else:
+                        swapper_output = self._fix_drift_and_texture(
+                            swapper_output, first_pass_face
+                        )
+
+                input_face_affined = swapper_output.permute(1, 2, 0)
+                output = torch.clamp(input_face_affined * 255.0, 0, 255)
 
         # --- InStyleSwapper Path ---
         elif swapper_model in (

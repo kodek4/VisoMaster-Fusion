@@ -704,7 +704,7 @@ class FrameWorker(threading.Thread):
         to the canonical face template for the given *swapper_model*.
 
         Different swapper architectures use different alignment templates
-        (ArcFace 128 crop, ArcFace map crop, or FFHQ-aligned crop for CSCS/Ghost).
+        (ArcFace 128 crop, pose-aware ArcFace map crop, or FFHQ-aligned crop).
 
         Args:
             swapper_model: The name of the active swapper (e.g. ``"Inswapper128"``).
@@ -716,8 +716,10 @@ class FrameWorker(threading.Thread):
         Raises:
             ValueError: If the transform estimation fails (degenerate face geometry).
         """
-        # FW-QUAL-10: use GHOSTFACE_MODELS frozenset instead of chained != comparisons
-        if swapper_model not in self.GHOSTFACE_MODELS and swapper_model != "CSCS":
+        uses_pose_aware_template = (
+            swapper_model == "AlphaFace" or swapper_model in self.GHOSTFACE_MODELS
+        )
+        if not uses_pose_aware_template and swapper_model != "CSCS":
             dst = faceutil.get_arcface_template(image_size=512, mode="arcface128")
             dst = np.squeeze(dst)
             # Use instance initialization + .estimate() for older skimage versions
@@ -750,13 +752,17 @@ class FrameWorker(threading.Thread):
                         "Similarity transform estimation failed for CSCS face"
                     )
         else:
-            # FW-QUAL-10: swapper_model in GHOSTFACE_MODELS
             tform = trans.SimilarityTransform()
             dst = faceutil.get_arcface_template(image_size=512, mode="arcfacemap")
+            if swapper_model == "AlphaFace":
+                # AlphaFace uses the five yaw templates. The two pitch templates
+                # can select a noticeably different crop for near-profile faces.
+                dst = dst[:5]
             M, _ = faceutil.estimate_norm_arcface_template(kps_5, src=dst)
             if M is None or np.any(np.isnan(M)) or np.any(np.isinf(M)):
                 raise ValueError(
-                    "GhostFace transform estimation failed (degenerate face geometry)"
+                    f"{swapper_model} transform estimation failed "
+                    "(degenerate face geometry)"
                 )
             tform.params[0:2] = M
         return tform
