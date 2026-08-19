@@ -17,9 +17,12 @@ from app.processors.models_data import (
 )
 from app.processors.alphaface.profiles import (
     ALPHAFACE_DEFAULT_PROFILE,
+    ALPHAFACE_DEFAULT_QUALITY_PROFILE,
     ALPHAFACE_FP16_MODEL_NAME,
     ALPHAFACE_PROFILE_OPTIONS,
+    ALPHAFACE_QUALITY_PROFILE_OPTIONS,
     get_alphaface_profile,
+    get_alphaface_quality_profile,
 )
 from app.processors.utils import faceutil, platform_support
 from app.processors.workers.frame_worker import FrameWorker
@@ -54,6 +57,16 @@ def test_alphaface_profile_contract() -> None:
     assert get_alphaface_profile("Exact").fast_runtime is True
     assert get_alphaface_profile("Exact").lean_crops is True
     assert get_alphaface_profile("not-a-profile").model_name == "AlphaFace"
+    assert (
+        ALPHAFACE_QUALITY_PROFILE_OPTIONS[0]
+        == ALPHAFACE_DEFAULT_QUALITY_PROFILE
+    )
+    assert get_alphaface_quality_profile("Training Matched").y_shift_256 == -14.0
+    assert (
+        get_alphaface_quality_profile("Training Matched Direct").direct_256_crop
+        is True
+    )
+    assert get_alphaface_quality_profile("not-a-profile").y_shift_256 == 0.0
 
 
 def test_alphaface_projection_is_matrix_multiply_then_l2_normalize() -> None:
@@ -167,6 +180,30 @@ def test_alphaface_lean_crop_path_skips_unused_resizes() -> None:
     assert face_384.data_ptr() == face_512.data_ptr()
     assert face_128.data_ptr() == face_256.data_ptr()
     assert face_256.shape == (3, 256, 256)
+
+
+def test_alphaface_direct_256_crop_does_not_require_resize_transform() -> None:
+    worker = FrameWorker.__new__(FrameWorker)
+    worker.t256 = None
+    worker.t384 = None
+    worker.t128 = None
+    image = torch.zeros((3, 512, 512), dtype=torch.uint8)
+    transform = SimpleNamespace(params=np.eye(3, dtype=np.float32))
+
+    face_512, face_384, face_256, face_128 = (
+        worker.get_transformed_and_scaled_faces(
+            transform,
+            image,
+            interp_mode="bilinear",
+            only_256=True,
+            direct_256=True,
+        )
+    )
+
+    assert face_512.shape == (3, 512, 512)
+    assert face_384.data_ptr() == face_512.data_ptr()
+    assert face_256.shape == (3, 256, 256)
+    assert face_128.data_ptr() == face_256.data_ptr()
 
 
 def test_alphaface_uses_pose_aware_target_alignment() -> None:

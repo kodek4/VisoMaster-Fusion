@@ -774,6 +774,7 @@ class FrameWorker(threading.Thread):
         img,
         interp_mode: str = "bilinear",
         only_256: bool = False,
+        direct_256: bool = False,
     ):
         """
         Applies the similarity transform to extract aligned face crops at four resolutions.
@@ -784,6 +785,7 @@ class FrameWorker(threading.Thread):
             img:         Full-frame CHW uint8 tensor.
             interp_mode: Interpolation mode for warp_affine (e.g. "bilinear" or "bicubic").
             only_256:    Skip the unused 384px and 128px resizes.
+            direct_256:  Warp the model input from the frame instead of resizing 512px.
 
         Returns:
             Tuple ``(face_512, face_384, face_256, face_128)``, all CHW uint8 tensors.
@@ -810,10 +812,20 @@ class FrameWorker(threading.Thread):
         # Convert back to original dtype (uint8) before passing to torchvision resizers
         original_face_512 = original_face_512.to(img.dtype)
 
-        assert self.t256 is not None, (
-            "t256 must be initialized via set_scaling_transforms"
-        )
-        original_face_256 = self.t256(original_face_512)
+        if direct_256:
+            original_face_256 = kgm.warp_affine(
+                img_b_float,
+                M_tensor * 0.5,
+                dsize=(256, 256),
+                mode=interp_mode,
+                align_corners=True,
+            ).squeeze(0)
+            original_face_256 = original_face_256.to(img.dtype)
+        else:
+            assert self.t256 is not None, (
+                "t256 must be initialized via set_scaling_transforms"
+            )
+            original_face_256 = self.t256(original_face_512)
         if only_256:
             return (
                 original_face_512,

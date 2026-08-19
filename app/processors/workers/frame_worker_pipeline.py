@@ -15,7 +15,10 @@ import kornia.geometry.transform as kgm
 
 from app.processors.utils import faceutil
 from app.processors.utils import platform_support
-from app.processors.alphaface.profiles import get_alphaface_profile
+from app.processors.alphaface.profiles import (
+    get_alphaface_profile,
+    get_alphaface_quality_profile,
+)
 
 if TYPE_CHECKING:
     # Forward reference to the main FrameWorker orchestrator
@@ -1650,6 +1653,9 @@ class PipelineProcessor:
         alphaface_profile = get_alphaface_profile(
             parameters.get("AlphaFacePerformanceProfileSelection")
         )
+        alphaface_quality_profile = get_alphaface_quality_profile(
+            parameters.get("AlphaFaceQualityProfileSelection")
+        )
         itex = 1  # FW-BUG-10: default before any branching to prevent NameError
 
         # OPTIMIZED: Lightweight functional resize wrapper to prevent VRAM fragmentation
@@ -1668,6 +1674,11 @@ class PipelineProcessor:
         debug_info: dict[str, str] = {}
 
         tform = self.worker.get_face_similarity_tform(swapper_model, kps_5)
+
+        if swapper_model == "AlphaFace" and alphaface_quality_profile.y_shift_256:
+            quality_matrix = cast(np.ndarray, tform.params).copy()
+            quality_matrix[1, 2] += alphaface_quality_profile.y_shift_256 * 2.0
+            tform = trans.SimilarityTransform(matrix=quality_matrix)
 
         # --- Preserve the unmodified matrix strictly for final paste-back ---
         # We must use the original bounds to paste the canvas back. If we use a scaled inverse,
@@ -1699,6 +1710,10 @@ class PipelineProcessor:
                 img,
                 interp_mode=_face_interp,
                 only_256=use_alphaface_lean_crops,
+                direct_256=(
+                    swapper_model == "AlphaFace"
+                    and alphaface_quality_profile.direct_256_crop
+                ),
             )
         )
 

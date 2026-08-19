@@ -2,7 +2,9 @@ from typing import Any
 import app.ui.widgets.actions.control_actions as control_actions
 from app.processors.alphaface.profiles import (
     ALPHAFACE_DEFAULT_PROFILE,
+    ALPHAFACE_DEFAULT_QUALITY_PROFILE,
     ALPHAFACE_PROFILE_OPTIONS,
+    ALPHAFACE_QUALITY_PROFILE_OPTIONS,
 )
 
 MASK_SHOW_OPTIONS = ["swap_mask", "diff", "texture"]
@@ -47,6 +49,15 @@ SWAPPER_LAYOUT_DATA: Any = {  # noqa: F811
             "parentSelection": "SwapModelSelection",
             "requiredSelectionValue": "AlphaFace",
             "help": "Compare the baseline, exact-output optimizations, fused graph, and TensorRT FP16 path.",
+        },
+        "AlphaFaceQualityProfileSelection": {
+            "level": 2,
+            "label": "AlphaFace Input Alignment",
+            "options": list(ALPHAFACE_QUALITY_PROFILE_OPTIONS),
+            "default": ALPHAFACE_DEFAULT_QUALITY_PROFILE,
+            "parentSelection": "SwapModelSelection",
+            "requiredSelectionValue": "AlphaFace",
+            "help": "Compare the current crop with the alignment used by AlphaFace training data.",
         },
         "SwapperResAutoSelectEnableToggle": {
             "level": 2,
