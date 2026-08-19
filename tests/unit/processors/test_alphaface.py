@@ -22,7 +22,7 @@ def test_alphaface_is_optional_and_uses_shared_arcface() -> None:
     model = next(item for item in models_list if item["model_name"] == "AlphaFace")
 
     assert model["optional"] is True
-    assert model["url"] is None
+    assert model["url"].endswith("/alphaface-model-v1/alphaface_swapper.onnx")
     assert arcface_mapping_model_dict["AlphaFace"] == "Inswapper128ArcFace"
     assert "AlphaFace" not in fp16_safe_models_list
 
