@@ -1,4 +1,5 @@
 import math
+import os
 import re
 from math import ceil
 from collections import OrderedDict, deque
@@ -15,6 +16,14 @@ import kornia.geometry.transform as kgm
 
 from app.processors.utils import faceutil
 from app.processors.utils import platform_support
+
+
+ALPHAFACE_FAST_RUNTIME = (
+    os.environ.get("VISOMASTER_ALPHAFACE_FAST_RUNTIME", "0") == "1"
+)
+ALPHAFACE_LEAN_CROPS = (
+    os.environ.get("VISOMASTER_ALPHAFACE_LEAN_CROPS", "0") == "1"
+)
 
 if TYPE_CHECKING:
     # Forward reference to the main FrameWorker orchestrator
@@ -327,10 +336,7 @@ class PipelineProcessor:
             source_latent = self.worker.function_worker.calc_swapper_latent_alphaface(
                 s_e
             )
-            target_latent = self.worker.function_worker.calc_swapper_latent_alphaface(
-                t_e
-            )
-            if source_latent is None or target_latent is None:
+            if source_latent is None:
                 return input_face_affined, dfm_model_instance, dim, latent
 
             latent = (
@@ -338,12 +344,23 @@ class PipelineProcessor:
                 .float()
                 .to(self.worker.models_processor.device)
             )
-            target_latent_tensor = (
-                torch.from_numpy(target_latent)
-                .float()
-                .to(self.worker.models_processor.device)
-            )
-            latent = self._apply_likeness(latent, target_latent_tensor, parameters)
+            if not (
+                ALPHAFACE_FAST_RUNTIME
+                and not parameters.get("FaceLikenessEnableToggle", False)
+            ):
+                target_latent = (
+                    self.worker.function_worker.calc_swapper_latent_alphaface(t_e)
+                )
+                if target_latent is None:
+                    return input_face_affined, dfm_model_instance, dim, None
+                target_latent_tensor = (
+                    torch.from_numpy(target_latent)
+                    .float()
+                    .to(self.worker.models_processor.device)
+                )
+                latent = self._apply_likeness(
+                    latent, target_latent_tensor, parameters
+                )
             dim = 2
             input_face_affined = original_face_256
 
@@ -832,7 +849,10 @@ class PipelineProcessor:
                 input_face_disc = (
                     input_face_affined.permute(2, 0, 1).unsqueeze(0).contiguous()
                 )
-                swapper_output = torch.empty(
+                allocate_output = (
+                    torch.empty if ALPHAFACE_FAST_RUNTIME else torch.zeros
+                )
+                swapper_output = allocate_output(
                     (1, 3, 256, 256),
                     dtype=torch.float32,
                     device=self.worker.models_processor.device,
@@ -841,6 +861,11 @@ class PipelineProcessor:
                 self.worker.function_worker.run_swapper_alphaface(
                     input_face_disc, latent, swapper_output
                 )
+                if (
+                    not ALPHAFACE_FAST_RUNTIME
+                    and self.worker.models_processor.device_type == "cuda"
+                ):
+                    platform_support.blocking_stream_sync()
 
                 swapper_output = swapper_output.squeeze(0)
                 valid_output = torch.logical_and(
@@ -1661,9 +1686,15 @@ class PipelineProcessor:
             if parameters.get("FaceAlignmentInterpolation", "Bilinear") == "Bicubic"
             else "bilinear"
         )
+        use_alphaface_lean_crops = (
+            swapper_model == "AlphaFace" and ALPHAFACE_LEAN_CROPS
+        )
         original_face_512, original_face_384, original_face_256, original_face_128 = (
             self.worker.get_transformed_and_scaled_faces(
-                tform, img, interp_mode=_face_interp
+                tform,
+                img,
+                interp_mode=_face_interp,
+                only_256=use_alphaface_lean_crops,
             )
         )
 
@@ -1698,15 +1729,19 @@ class PipelineProcessor:
                     )
 
                 # 2. Cascade changes to down-res variants used by specific swappers/masks
-                original_face_384 = _resize_func(
-                    original_face_512, (384, 384), is_mask=False
-                )
                 original_face_256 = _resize_func(
                     original_face_512, (256, 256), is_mask=False
                 )
-                original_face_128 = _resize_func(
-                    original_face_512, (128, 128), is_mask=False
-                )
+                if use_alphaface_lean_crops:
+                    original_face_384 = original_face_512
+                    original_face_128 = original_face_256
+                else:
+                    original_face_384 = _resize_func(
+                        original_face_512, (384, 384), is_mask=False
+                    )
+                    original_face_128 = _resize_func(
+                        original_face_512, (128, 128), is_mask=False
+                    )
 
                 # 3. Mathematically shift the coordinate matrix so Restorers track the new pixel locations
                 scale_matrix = np.array(
@@ -1769,7 +1804,12 @@ class PipelineProcessor:
                     itex = ceil(parameters["StrengthAmountSlider"] / 100.0)
 
                 output_size = int(128 * dim)
-                output = torch.zeros(
+                allocate_output = (
+                    torch.empty
+                    if swapper_model == "AlphaFace" and ALPHAFACE_FAST_RUNTIME
+                    else torch.zeros
+                )
+                output = allocate_output(
                     (output_size, output_size, 3),
                     dtype=torch.float32,
                     device=self.worker.models_processor.device,

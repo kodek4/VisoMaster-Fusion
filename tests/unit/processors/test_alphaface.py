@@ -6,15 +6,18 @@ from types import SimpleNamespace
 
 import numpy as np
 import torch
+from torchvision.transforms import v2
 
-from app.processors.face_swappers import FaceSwappers
 from app.processors.alphaface.model import IdentityFeedingBlock
+from app.processors.face_swappers import FaceSwappers
 from app.processors.models_data import (
+    ALPHAFACE_SIMPLIFIED_GRAPH,
     arcface_mapping_model_dict,
     fp16_safe_models_list,
     models_list,
 )
-from app.processors.utils import faceutil
+from app.processors.utils import faceutil, platform_support
+from app.processors.workers import frame_worker_pipeline
 from app.processors.workers.frame_worker import FrameWorker
 from app.processors.workers.frame_worker_pipeline import PipelineProcessor
 
@@ -23,9 +26,12 @@ def test_alphaface_is_optional_and_uses_shared_arcface() -> None:
     model = next(item for item in models_list if item["model_name"] == "AlphaFace")
 
     assert model["optional"] is True
-    assert model["url"].endswith(
-        "/alphaface-model-v1/alphaface_swapper_optimized.onnx"
+    filename = (
+        "alphaface_swapper_optimized.onnx"
+        if ALPHAFACE_SIMPLIFIED_GRAPH
+        else "alphaface_swapper.onnx"
     )
+    assert model["url"].endswith(f"/alphaface-model-v1/{filename}")
     assert arcface_mapping_model_dict["AlphaFace"] == "Inswapper128ArcFace"
     assert "AlphaFace" not in fp16_safe_models_list
 
@@ -108,6 +114,25 @@ def test_alphaface_selects_256px_face_and_projected_latent() -> None:
     assert dim == 2
     assert torch.is_tensor(latent)
     assert torch.all(latent == 3.0)
+
+
+def test_alphaface_lean_crop_path_skips_unused_resizes() -> None:
+    worker = FrameWorker.__new__(FrameWorker)
+    worker.t256 = v2.Resize((256, 256), antialias=True)
+    worker.t384 = None
+    worker.t128 = None
+    image = torch.zeros((3, 512, 512), dtype=torch.uint8)
+    transform = SimpleNamespace(params=np.eye(3, dtype=np.float32))
+
+    face_512, face_384, face_256, face_128 = (
+        worker.get_transformed_and_scaled_faces(
+            transform, image, interp_mode="bilinear", only_256=True
+        )
+    )
+
+    assert face_384.data_ptr() == face_512.data_ptr()
+    assert face_128.data_ptr() == face_256.data_ptr()
+    assert face_256.shape == (3, 256, 256)
 
 
 def test_alphaface_uses_pose_aware_target_alignment() -> None:
@@ -197,3 +222,81 @@ def test_alphaface_nonfinite_output_falls_back_to_aligned_crop() -> None:
 
     assert torch.isfinite(swap).all()
     assert torch.allclose(swap, torch.full_like(swap, 127.5))
+
+
+def test_alphaface_fast_runtime_toggle_preserves_output(monkeypatch) -> None:
+    class Functions:
+        @staticmethod
+        def run_swapper_alphaface(image, embedding, output) -> None:
+            output.fill_(0.25)
+
+    worker = SimpleNamespace(
+        function_worker=Functions(),
+        models_processor=SimpleNamespace(device=torch.device("cpu"), device_type="cuda"),
+        t512=lambda tensor: tensor,
+        GHOSTFACE_MODELS=frozenset(),
+    )
+    pipeline = PipelineProcessor(worker)
+    face = torch.full((256, 256, 3), 0.5)
+    sync_calls = 0
+
+    def count_sync() -> None:
+        nonlocal sync_calls
+        sync_calls += 1
+
+    monkeypatch.setattr(platform_support, "blocking_stream_sync", count_sync)
+
+    results = []
+    for enabled in (False, True):
+        monkeypatch.setattr(frame_worker_pipeline, "ALPHAFACE_FAST_RUNTIME", enabled)
+        swap, _ = pipeline.get_swapped_and_prev_face(
+            output=torch.empty_like(face),
+            input_face_affined=face,
+            original_face_512=torch.zeros((3, 512, 512)),
+            latent=torch.ones((1, 512)),
+            itex=1,
+            dim=2,
+            swapper_model="AlphaFace",
+            dfm_model=None,
+            parameters={"PreSwapSharpnessDecimalSlider": 1.0},
+        )
+        results.append(swap)
+
+    assert sync_calls == 1
+    torch.testing.assert_close(results[0], results[1], rtol=0, atol=0)
+
+
+def test_alphaface_fast_runtime_skips_unused_target_latent(monkeypatch) -> None:
+    source = np.ones(512, dtype=np.float32)
+    target = np.full(512, 2.0, dtype=np.float32)
+
+    class Functions:
+        @staticmethod
+        def calc_swapper_latent_alphaface(embedding: np.ndarray) -> np.ndarray:
+            if embedding is target:
+                raise AssertionError("target latent should not be projected")
+            return np.ones((1, 512), dtype=np.float32)
+
+    worker = SimpleNamespace(
+        function_worker=Functions(),
+        models_processor=SimpleNamespace(device=torch.device("cpu")),
+    )
+    pipeline = PipelineProcessor(worker)
+    faces = tuple(torch.zeros((3, size, size)) for size in (512, 384, 256, 128))
+    monkeypatch.setattr(frame_worker_pipeline, "ALPHAFACE_FAST_RUNTIME", True)
+
+    selected, _dfm, _dim, latent = (
+        pipeline.get_affined_face_dim_and_swapping_latents(
+            faces,
+            "AlphaFace",
+            None,
+            source,
+            target,
+            {"FaceLikenessEnableToggle": False},
+            False,
+            None,
+        )
+    )
+
+    assert selected is faces[2]
+    assert torch.is_tensor(latent)

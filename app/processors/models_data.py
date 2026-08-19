@@ -19,6 +19,22 @@ for _subfolder in ("alphaface", "liveportrait_onnx", "performrecast_onnx"):
 
 assets_repo = "https://github.com/visomaster/visomaster-assets/releases/download"
 
+# Hidden A/B switch for the performance branch. Read once at startup so model
+# selection cannot change underneath an active ONNX Runtime session.
+ALPHAFACE_SIMPLIFIED_GRAPH = (
+    os.environ.get("VISOMASTER_ALPHAFACE_SIMPLIFIED_GRAPH", "0") == "1"
+)
+if ALPHAFACE_SIMPLIFIED_GRAPH:
+    _alphaface_filename = "alphaface_swapper_optimized.onnx"
+    _alphaface_hash = (
+        "bab57e96b1d12602415661d28887e20f5637003300e8bc303cf054827afa442b"
+    )
+else:
+    _alphaface_filename = "alphaface_swapper.onnx"
+    _alphaface_hash = (
+        "32890d53c61e90802c85389dd0858632d927258f62bb589bacdc38904a64494f"
+    )
+
 ARCFACE_DST = np.array(
     [
         [38.2946, 51.6963],
@@ -304,9 +320,12 @@ models_list = [
     },
     {
         "model_name": "AlphaFace",
-        "local_path": f"{models_dir}/alphaface/alphaface_swapper.onnx",
-        "hash": "bab57e96b1d12602415661d28887e20f5637003300e8bc303cf054827afa442b",
-        "url": "https://github.com/kodek4/VisoMaster-Fusion/releases/download/alphaface-model-v1/alphaface_swapper_optimized.onnx",
+        "local_path": f"{models_dir}/alphaface/{_alphaface_filename}",
+        "hash": _alphaface_hash,
+        "url": (
+            "https://github.com/kodek4/VisoMaster-Fusion/releases/download/"
+            f"alphaface-model-v1/{_alphaface_filename}"
+        ),
         "optional": True,
     },
     {
