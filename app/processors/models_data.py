@@ -308,40 +308,40 @@ models_list = [
     {
         "model_name": "AlphaFace",
         "local_path": f"{models_dir}/alphaface/alphaface_swapper.onnx",
-        "hash": "32890d53c61e90802c85389dd0858632d927258f62bb589bacdc38904a64494f",
+        "hash": "0c85a2827f78095cc297192c3217f672c9f92bf67c21e5157d971608fc764620",
         "url": (
             "https://github.com/kodek4/VisoMaster-Fusion/releases/download/"
-            "alphaface-model-v1/alphaface_swapper.onnx"
+            "alphaface-model-v2/alphaface_swapper.onnx"
         ),
         "optional": True,
     },
     {
         "model_name": "AlphaFace Exact",
         "local_path": f"{models_dir}/alphaface/alphaface_swapper_optimized.onnx",
-        "hash": "bab57e96b1d12602415661d28887e20f5637003300e8bc303cf054827afa442b",
+        "hash": "140922beca54769740b7f1d03acd41a1c3f2300d04f48c01563a8136dbee52fb",
         "url": (
             "https://github.com/kodek4/VisoMaster-Fusion/releases/download/"
-            "alphaface-model-v1/alphaface_swapper_optimized.onnx"
+            "alphaface-model-v2/alphaface_swapper_optimized.onnx"
         ),
         "optional": True,
     },
     {
         "model_name": "AlphaFace Fused",
         "local_path": f"{models_dir}/alphaface/alphaface_swapper_fused_norm.onnx",
-        "hash": "5514d967ab6cc27e1b0edc092e05ee97d235adccb4da68574a9b1a1e221a4c6a",
+        "hash": "8d56196072e76f136e8b1dc7cb9fafcb045a3a9a4b73684900c232b67bd26410",
         "url": (
             "https://github.com/kodek4/VisoMaster-Fusion/releases/download/"
-            "alphaface-model-v1/alphaface_swapper_fused_norm.onnx"
+            "alphaface-model-v2/alphaface_swapper_fused_norm.onnx"
         ),
         "optional": True,
     },
     {
         "model_name": ALPHAFACE_FP16_MODEL_NAME,
         "local_path": f"{models_dir}/alphaface/alphaface_swapper_fused_norm.onnx",
-        "hash": "5514d967ab6cc27e1b0edc092e05ee97d235adccb4da68574a9b1a1e221a4c6a",
+        "hash": "8d56196072e76f136e8b1dc7cb9fafcb045a3a9a4b73684900c232b67bd26410",
         "url": (
             "https://github.com/kodek4/VisoMaster-Fusion/releases/download/"
-            "alphaface-model-v1/alphaface_swapper_fused_norm.onnx"
+            "alphaface-model-v2/alphaface_swapper_fused_norm.onnx"
         ),
         "optional": True,
     },

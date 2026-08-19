@@ -323,11 +323,12 @@ class FunctionWorker:
         self,
         image: torch.Tensor,
         embedding: torch.Tensor,
+        identity_gain: torch.Tensor,
         output: torch.Tensor,
         model_name: str,
     ) -> None:
         self.face_swappers.run_swapper_alphaface(
-            image, embedding, output, model_name
+            image, embedding, identity_gain, output, model_name
         )
 
     def run_inswapper(

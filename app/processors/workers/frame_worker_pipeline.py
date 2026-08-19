@@ -342,10 +342,6 @@ class PipelineProcessor:
                 .float()
                 .to(self.worker.models_processor.device)
             )
-            identity_injection = float(
-                parameters.get("AlphaFaceIdentityInjectionDecimalSlider", 1.0)
-            )
-            latent.mul_(max(0.0, min(identity_injection, 1.5)))
             if not (
                 alphaface_profile.fast_runtime
                 and not parameters.get("FaceLikenessEnableToggle", False)
@@ -849,6 +845,23 @@ class PipelineProcessor:
             alphaface_profile = get_alphaface_profile(
                 parameters.get("AlphaFacePerformanceProfileSelection")
             )
+            identity_gain = torch.tensor(
+                [
+                    max(
+                        0.75,
+                        min(
+                            float(
+                                parameters.get(
+                                    "AlphaFaceIdentityGainDecimalSlider", 1.0
+                                )
+                            ),
+                            1.5,
+                        ),
+                    )
+                ],
+                dtype=torch.float32,
+                device=self.worker.models_processor.device,
+            )
             for k in range(itex):
                 prev_face = input_face_affined
                 input_face_disc = (
@@ -866,6 +879,7 @@ class PipelineProcessor:
                 self.worker.function_worker.run_swapper_alphaface(
                     input_face_disc,
                     latent,
+                    identity_gain,
                     swapper_output,
                     alphaface_profile.model_name,
                 )

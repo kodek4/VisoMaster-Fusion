@@ -506,6 +506,7 @@ class FaceSwappers:
         self,
         image: torch.Tensor,
         embedding: torch.Tensor,
+        identity_gain: torch.Tensor,
         output: torch.Tensor,
         model_name: str,
     ) -> None:
@@ -520,6 +521,7 @@ class FaceSwappers:
 
         image = image.contiguous()
         embedding = embedding.contiguous()
+        identity_gain = identity_gain.contiguous()
         output = output.contiguous()
         io_binding = model.io_binding()
         io_binding.clear_binding_inputs()
@@ -539,6 +541,14 @@ class FaceSwappers:
             element_type=np.float32,
             shape=(1, 512),
             buffer_ptr=embedding.data_ptr(),
+        )
+        io_binding.bind_input(
+            name="identity_gain",
+            device_type=self.models_processor.device_type,
+            device_id=self.models_processor.binding_device_id,
+            element_type=np.float32,
+            shape=(1,),
+            buffer_ptr=identity_gain.data_ptr(),
         )
         io_binding.bind_output(
             name="output",

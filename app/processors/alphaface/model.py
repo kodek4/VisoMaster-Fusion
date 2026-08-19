@@ -76,8 +76,16 @@ class CrossAdaptiveIdentityInjectionBlock(nn.Module):
             1024, 2048, activate=False, fused_instance_norm=fused_instance_norm
         )
 
-    def forward(self, features: torch.Tensor, identity: torch.Tensor) -> torch.Tensor:
-        return features + self.OP2(self.OP1(features, identity), identity)
+    def forward(
+        self,
+        features: torch.Tensor,
+        identity: torch.Tensor,
+        residual_gain: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        residual = self.OP2(self.OP1(features, identity), identity)
+        if residual_gain is not None:
+            residual = residual * residual_gain
+        return features + residual
 
 
 class Encoder(nn.Module):
@@ -111,12 +119,20 @@ class Encoder(nn.Module):
             }
         )
 
-    def forward(self, target: torch.Tensor, identity: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self,
+        target: torch.Tensor,
+        identity: torch.Tensor,
+        identity_gain: torch.Tensor,
+    ) -> torch.Tensor:
         output = F.pad(target, (3, 3, 3, 3), mode="reflect")
         for index in range(4):
             output = self.Encoder[f"layer_{index}"](output)
         for index in range(6):
-            output = self.fusion_module[f"fusion_layer_{index}"](output, identity)
+            residual_gain = identity_gain if index >= 3 else None
+            output = self.fusion_module[f"fusion_layer_{index}"](
+                output, identity, residual_gain
+            )
         return output
 
 
@@ -158,6 +174,9 @@ class AlphaFaceSwapper(nn.Module):
         self.G = Decoder()
 
     def forward(
-        self, target: torch.Tensor, source_embedding: torch.Tensor
+        self,
+        target: torch.Tensor,
+        source_embedding: torch.Tensor,
+        identity_gain: torch.Tensor,
     ) -> torch.Tensor:
-        return self.G(self.E(target, source_embedding))
+        return self.G(self.E(target, source_embedding, identity_gain))

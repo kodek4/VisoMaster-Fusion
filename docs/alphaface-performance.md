@@ -22,5 +22,6 @@ engine is built.
 | Training Matched | Matches the vertical placement in the official AlphaFace samples. |
 | Training Matched Direct | Uses the matched placement and warps the 256px input directly from the frame. |
 
-**AlphaFace Identity Injection** scales the identity code passed to the model.
-The released model uses `1.00`; other values are experimental.
+**AlphaFace Identity Strength** adjusts the identity-conditioned residual in
+the final three CAII blocks. `1.00` matches the released model. Values around
+`1.15` to `1.25` can strengthen identity, while larger values may soften detail.

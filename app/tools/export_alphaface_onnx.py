@@ -59,13 +59,14 @@ def export(
     temporary_path = output_path.with_suffix(".exporting.onnx")
     target = torch.zeros((1, 3, 256, 256), dtype=torch.float32)
     identity = torch.zeros((1, 512), dtype=torch.float32)
+    identity_gain = torch.ones((1,), dtype=torch.float32)
 
     with torch.inference_mode():
         torch.onnx.export(
             model,
-            (target, identity),
+            (target, identity, identity_gain),
             temporary_path,
-            input_names=["target", "source_embedding"],
+            input_names=["target", "source_embedding", "identity_gain"],
             output_names=["output"],
             opset_version=17,
             do_constant_folding=True,

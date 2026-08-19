@@ -46,7 +46,7 @@ def test_alphaface_is_optional_and_uses_shared_arcface() -> None:
     for model_name, filename in expected_files.items():
         model = alphaface_models[model_name]
         assert model["optional"] is True
-        assert model["url"].endswith(f"/alphaface-model-v1/{filename}")
+        assert model["url"].endswith(f"/alphaface-model-v2/{filename}")
     assert arcface_mapping_model_dict["AlphaFace"] == "Inswapper128ArcFace"
     assert ALPHAFACE_FP16_MODEL_NAME in fp16_safe_models_list
     assert "AlphaFace Fused" not in fp16_safe_models_list
@@ -233,9 +233,12 @@ def test_alphaface_excludes_scale_popping_pitch_templates() -> None:
 def test_alphaface_inference_path_preserves_unit_range_contract() -> None:
     class Functions:
         @staticmethod
-        def run_swapper_alphaface(image, embedding, output, model_name) -> None:
+        def run_swapper_alphaface(
+            image, embedding, identity_gain, output, model_name
+        ) -> None:
             assert image.shape == (1, 3, 256, 256)
             assert embedding.shape == (1, 512)
+            torch.testing.assert_close(identity_gain, torch.tensor([1.25]))
             assert model_name == "AlphaFace"
             output.fill_(0.25)
 
@@ -257,7 +260,10 @@ def test_alphaface_inference_path_preserves_unit_range_contract() -> None:
         dim=2,
         swapper_model="AlphaFace",
         dfm_model=None,
-        parameters={"PreSwapSharpnessDecimalSlider": 1.0},
+        parameters={
+            "PreSwapSharpnessDecimalSlider": 1.0,
+            "AlphaFaceIdentityGainDecimalSlider": 1.25,
+        },
     )
 
     assert swap.shape == (3, 256, 256)
@@ -268,7 +274,9 @@ def test_alphaface_inference_path_preserves_unit_range_contract() -> None:
 def test_alphaface_nonfinite_output_falls_back_to_aligned_crop() -> None:
     class Functions:
         @staticmethod
-        def run_swapper_alphaface(image, embedding, output, model_name) -> None:
+        def run_swapper_alphaface(
+            image, embedding, identity_gain, output, model_name
+        ) -> None:
             output.fill_(float("nan"))
 
     worker = SimpleNamespace(
@@ -301,7 +309,9 @@ def test_alphaface_exact_profile_preserves_runtime_output(monkeypatch) -> None:
 
     class Functions:
         @staticmethod
-        def run_swapper_alphaface(image, embedding, output, model_name) -> None:
+        def run_swapper_alphaface(
+            image, embedding, identity_gain, output, model_name
+        ) -> None:
             model_names.append(model_name)
             output.fill_(0.25)
 
@@ -381,7 +391,7 @@ def test_alphaface_exact_profile_skips_unused_target_latent() -> None:
     assert torch.is_tensor(latent)
 
 
-def test_alphaface_identity_injection_scales_source_code() -> None:
+def test_alphaface_identity_strength_does_not_scale_source_code() -> None:
     source = np.ones(512, dtype=np.float32)
     target = np.full(512, 2.0, dtype=np.float32)
 
@@ -409,11 +419,11 @@ def test_alphaface_identity_injection_scales_source_code() -> None:
             {
                 "FaceLikenessEnableToggle": False,
                 "AlphaFacePerformanceProfileSelection": "Exact",
-                "AlphaFaceIdentityInjectionDecimalSlider": 1.25,
+                "AlphaFaceIdentityGainDecimalSlider": 1.25,
             },
             False,
             None,
         )
     )
 
-    torch.testing.assert_close(latent, torch.full((1, 512), 1.25))
+    torch.testing.assert_close(latent, torch.ones((1, 512)))

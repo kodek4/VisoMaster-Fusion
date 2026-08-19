@@ -59,17 +59,17 @@ SWAPPER_LAYOUT_DATA: Any = {  # noqa: F811
             "requiredSelectionValue": "AlphaFace",
             "help": "Compare the current crop with the alignment used by AlphaFace training data.",
         },
-        "AlphaFaceIdentityInjectionDecimalSlider": {
+        "AlphaFaceIdentityGainDecimalSlider": {
             "level": 2,
-            "label": "AlphaFace Identity Injection",
-            "min_value": "0.00",
+            "label": "AlphaFace Identity Strength",
+            "min_value": "0.75",
             "max_value": "1.50",
             "default": "1.00",
             "decimals": 2,
             "step": 0.05,
             "parentSelection": "SwapModelSelection",
             "requiredSelectionValue": "AlphaFace",
-            "help": "Scale the AlphaFace identity code. 1.00 is the value used by the released model.",
+            "help": "Adjust identity injection in the final three AlphaFace CAII blocks. 1.00 matches the released model.",
         },
         "SwapperResAutoSelectEnableToggle": {
             "level": 2,
